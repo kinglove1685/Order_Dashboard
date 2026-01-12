@@ -20,6 +20,8 @@ ISSUE_TRACKER_PATH = BASE_DIR / "issue_tracker.xlsx"
 TAB_ORDER_STATUS = "\uc218\uc8fc \uc9c4\ud589 \uc0c1\uc138"
 TAB_BY_ITEM = "\uc81c\ud488\ubcc4 \uc218\uc8fc \uc9c4\ud589"
 TAB_ISSUES = "\uc0dd\uc0b0 \uc774\uc288 \uad00\ub9ac"
+TAB_PRODUCT_SUMMARY = "\uc81c\ud488 \uc218\uc694 \uc694\uc57d"
+TAB_PRODUCT_MONTHLY = "\uc81c\ud488 \uc6d4\ubcc4 \uc218\uc8fc"
 SEARCH_COL = "__search_key__"
 MAX_STATUS_STYLE_ROWS = 2000
 ISSUE_ROW_HEIGHT = 90
@@ -165,6 +167,17 @@ COL_NOTE = "\uc0dd\uc0b0/\ud3ec\uc7a5 \ud2b9\uc774\uc0ac\ud56d"
 COL_RESOLVED = "\ud574\uacb0\uc5ec\ubd80"
 COL_CLOSED_DATE = "\uc885\uacb0\uc77c"
 COL_ISSUE_DATE = "\uc548\uac74\uc0c1\uc815\uc77c"
+COL_PRIORITY = "\uc6b0\uc120\uc21c\uc704"
+COL_AVG_DEMAND = "\ud3c9\uade0\uc218\uc694"
+COL_TOTAL_QTY = "\ucd1d \uc624\ub354\uc218\ub7c9"
+COL_PO_COUNT = "PO\ud69f\uc218"
+COL_PO_STREAK = "\uc5f0\uc18d PO \ud69f\uc218"
+COL_SHARE = "\uc810\uc720\uc728"
+COL_ROW_LABEL = "\ud589 \ub808\uc774\ube14"
+COL_TOTAL_ORDERS = "\ucd1d \uc218\uc8fc"
+COL_CONSECUTIVE_ORDERS = "\uc5f0\uc18d\uc218\uc8fc"
+COL_WEIGHTED_SCORE = "\uac00\uc911\uc810\uc218"
+COL_MONTH_NUM = "\uc6d4 \uc22b\uc790"
 COL_DUE_PLAN = "\ub0a9\uae30\uc900\uc218(\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c)"
 COL_DUE_SALES = "\ub0a9\uae30\uc900\uc218(\uc601\uc5c5\ucd9c\uace0\uc694\uccad\uc77c)"
 COL_DUE_PLAN_RATE = "\ub0a9\uae30\uc900\uc218\uc728(\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c)"
@@ -480,6 +493,197 @@ def compute_compliance_rate(
     delayed = delayed.reindex(total.index, fill_value=0)
     rate = (total - delayed).div(total).mul(100)
     return rate
+
+
+def max_consecutive_months(months: list[date]) -> int:
+    if not months:
+        return 0
+    uniq = sorted({m for m in months if isinstance(m, date)})
+    if not uniq:
+        return 0
+    best = 1
+    current = 1
+    prev_key = uniq[0].year * 12 + uniq[0].month
+    for current_date in uniq[1:]:
+        cur_key = current_date.year * 12 + current_date.month
+        if cur_key - prev_key == 1:
+            current += 1
+        else:
+            current = 1
+        best = max(best, current)
+        prev_key = cur_key
+    return best
+
+
+def month_sequence(start: date, end: date) -> list[date]:
+    if start is None or end is None or start > end:
+        return []
+    cursor = date(start.year, start.month, 1)
+    last = date(end.year, end.month, 1)
+    months: list[date] = []
+    while cursor <= last:
+        months.append(cursor)
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+    return months
+
+
+def compute_product_priority(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or COL_PRODUCT not in df.columns or COL_ORDER_QTY not in df.columns:
+        return pd.DataFrame(
+            columns=[COL_PRIORITY, COL_PRODUCT, COL_AVG_DEMAND, COL_PO_COUNT, COL_PO_STREAK, COL_SHARE]
+        )
+    df = add_month_date_column(df.copy())
+    df = df[df[COL_PRODUCT].notna()]
+    df = df[df[COL_PRODUCT].astype(str).str.strip().ne("")]
+
+    total_qty = df[COL_ORDER_QTY].sum()
+    grouped = df.groupby(COL_PRODUCT, dropna=False)
+    summary = grouped.agg(
+        _total_qty=(COL_ORDER_QTY, "sum"),
+        _po_count=(COL_WORKNO, "nunique"),
+        _avg_demand=(COL_ORDER_QTY, "mean"),
+    )
+    summary[COL_PO_STREAK] = grouped[COL_MONTH_DATE].apply(
+        lambda values: max_consecutive_months([v for v in values if pd.notna(v)])
+    )
+    if total_qty:
+        summary[COL_SHARE] = (summary["_total_qty"] / total_qty) * 100
+    else:
+        summary[COL_SHARE] = 0.0
+
+    summary = summary.sort_values(
+        by=[COL_SHARE, "_avg_demand", COL_PO_STREAK],
+        ascending=[False, False, False],
+    )
+    summary[COL_PRIORITY] = range(1, len(summary) + 1)
+    summary[COL_AVG_DEMAND] = summary["_avg_demand"]
+    summary[COL_TOTAL_QTY] = summary["_total_qty"]
+    summary[COL_PO_COUNT] = summary["_po_count"]
+    summary = summary.reset_index()
+    summary = summary[
+        [
+            COL_PRIORITY,
+            COL_PRODUCT,
+            COL_AVG_DEMAND,
+            COL_TOTAL_QTY,
+            COL_PO_COUNT,
+            COL_PO_STREAK,
+            COL_SHARE,
+        ]
+    ]
+    return summary.reset_index(drop=True)
+
+
+def max_consecutive_flags(flags: list[bool]) -> int:
+    best = 0
+    current = 0
+    for flag in flags:
+        if flag:
+            current += 1
+            best = max(best, current)
+        else:
+            current = 0
+    return best
+
+
+def compute_product_monthly_summary(
+    df: pd.DataFrame, month_range: tuple[date, date] | None
+) -> pd.DataFrame:
+    month_list: list[date] = []
+    if month_range:
+        start, end = month_range
+        if start.year != end.year:
+            start = date(start.year, 1, 1)
+            end = date(end.year, 12, 1)
+        month_list = month_sequence(start, end)
+
+    if df.empty or COL_PRODUCT not in df.columns or COL_ORDER_QTY not in df.columns:
+        if not month_list:
+            return pd.DataFrame()
+        month_labels = [m.strftime("%Y-%m") for m in month_list]
+        columns = (
+            [COL_PRIORITY, COL_CUSTOMER, COL_ROW_LABEL]
+            + month_labels
+            + [
+                COL_TOTAL_ORDERS,
+                COL_CONSECUTIVE_ORDERS,
+                COL_WEIGHTED_SCORE,
+                COL_AVG_DEMAND,
+            ]
+        )
+        return pd.DataFrame(columns=columns)
+
+    df = add_month_date_column(df.copy())
+    df = df[df[COL_PRODUCT].notna()]
+    df = df[df[COL_PRODUCT].astype(str).str.strip().ne("")]
+    if COL_CUSTOMER in df.columns:
+        df = df[df[COL_CUSTOMER].notna()]
+    df = df[df[COL_MONTH_DATE].notna()]
+    if df.empty:
+        return pd.DataFrame()
+
+    if not month_list:
+        min_month = df[COL_MONTH_DATE].min()
+        max_month = df[COL_MONTH_DATE].max()
+        if pd.isna(min_month) or pd.isna(max_month):
+            return pd.DataFrame()
+        month_list = month_sequence(min_month, max_month)
+    if not month_list:
+        return pd.DataFrame()
+
+    month_labels = [m.strftime("%Y-%m") for m in month_list]
+    df[COL_MONTH_DATE] = df[COL_MONTH_DATE].apply(
+        lambda d: date(d.year, d.month, 1)
+    )
+    pivot = (
+        df.pivot_table(
+            index=[COL_CUSTOMER, COL_PRODUCT],
+            columns=COL_MONTH_DATE,
+            values=COL_ORDER_QTY,
+            aggfunc="sum",
+            fill_value=0,
+        )
+        .reindex(columns=month_list, fill_value=0)
+        .copy()
+    )
+    total_orders = (pivot > 0).sum(axis=1)
+    consecutive = pivot.apply(
+        lambda row: max_consecutive_flags([val > 0 for val in row.tolist()]), axis=1
+    )
+    recent_cols = month_list[-6:]
+    recent_sum = pivot[recent_cols].sum(axis=1) if recent_cols else 0
+    weighted = ((total_orders / 1000) + (consecutive * 5) + (recent_sum * 2 / 1000)).round(0)
+    total_qty = pivot.sum(axis=1)
+    avg_demand = total_qty.div(consecutive.replace(0, pd.NA)).fillna(0)
+
+    result = pivot.copy()
+    result[COL_TOTAL_ORDERS] = total_orders
+    result[COL_CONSECUTIVE_ORDERS] = consecutive
+    result[COL_WEIGHTED_SCORE] = weighted
+    result[COL_AVG_DEMAND] = avg_demand
+
+    result = result.sort_values(
+        by=[COL_WEIGHTED_SCORE, COL_TOTAL_ORDERS, COL_AVG_DEMAND],
+        ascending=[False, False, False],
+    )
+    result = result.reset_index().rename(columns={COL_PRODUCT: COL_ROW_LABEL})
+    result[COL_PRIORITY] = range(1, len(result) + 1)
+    rename_map = {m: label for m, label in zip(month_list, month_labels)}
+    result = result.rename(columns=rename_map)
+    result = result[
+        [COL_PRIORITY, COL_CUSTOMER, COL_ROW_LABEL]
+        + month_labels
+        + [
+            COL_TOTAL_ORDERS,
+            COL_CONSECUTIVE_ORDERS,
+            COL_WEIGHTED_SCORE,
+            COL_AVG_DEMAND,
+        ]
+    ]
+    return result.reset_index(drop=True)
 
 
 def move_note_before_year(df: pd.DataFrame) -> pd.DataFrame:
@@ -1173,7 +1377,9 @@ def main() -> None:
 
     st.caption(source_label)
 
-    tabs = st.tabs([TAB_ORDER_STATUS, TAB_BY_ITEM, TAB_ISSUES])
+    tabs = st.tabs(
+        [TAB_ORDER_STATUS, TAB_BY_ITEM, TAB_PRODUCT_SUMMARY, TAB_PRODUCT_MONTHLY, TAB_ISSUES]
+    )
     shared_filters: dict | None = None
 
     with tabs[0]:
@@ -1283,6 +1489,84 @@ def main() -> None:
         )
 
     with tabs[2]:
+        st.subheader(TAB_PRODUCT_SUMMARY)
+        df = data["order_status_by_item"].copy()
+        month_range = render_period_controls(df, "product")
+
+        detail_df, _, _ = apply_order_filters(
+            df,
+            month_range,
+            filters=shared_filters or {},
+            show_sidebar=False,
+            apply_month_filter=False,
+        )
+        query = st.text_input(
+            "\ud1b5\ud569 \uac80\uc0c9 (\uc791\uc9c0\ubc88\ud638/\ud488\uba85 \ubc94\uc704\ub85c \uac80\uc0c9)",
+            "",
+            key="product_summary_search",
+        )
+        detail_df = apply_search(detail_df, query)
+
+        if detail_df.empty:
+            st.info("\ud574\ub2f9 \uae30\uac04\uc5d0 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
+        else:
+            summary_df = compute_product_priority(detail_df)
+            numeric_cols = [
+                COL_PRIORITY,
+                COL_AVG_DEMAND,
+                COL_TOTAL_QTY,
+                COL_PO_COUNT,
+                COL_PO_STREAK,
+            ]
+            styled = build_styler(
+                summary_df,
+                numeric_cols,
+                [],
+                status_col=None,
+                percent_cols=[COL_SHARE],
+            )
+            styled = apply_styler_widths(styled, list(summary_df.columns))
+            st.dataframe(styled, use_container_width=True, height=560)
+
+    with tabs[3]:
+        st.subheader(TAB_PRODUCT_MONTHLY)
+        df = data["order_status_by_item"].copy()
+        month_range = render_period_controls(df, "product_monthly")
+
+        detail_df, _, _ = apply_order_filters(
+            df,
+            month_range,
+            filters=shared_filters or {},
+            show_sidebar=False,
+            apply_month_filter=False,
+        )
+        query = st.text_input(
+            "\ud1b5\ud569 \uac80\uc0c9 (\uc791\uc9c0\ubc88\ud638/\ud488\uba85 \ubc94\uc704\ub85c \uac80\uc0c9)",
+            "",
+            key="product_monthly_search",
+        )
+        detail_df = apply_search(detail_df, query)
+
+        monthly_df = compute_product_monthly_summary(detail_df, month_range)
+        if monthly_df.empty:
+            st.info("\ud574\ub2f9 \uae30\uac04\uc5d0 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
+        else:
+            month_cols = [
+                col
+                for col in monthly_df.columns
+                if isinstance(col, str) and re.match(r"^\d{4}-\d{2}$", col)
+            ]
+            numeric_cols = [COL_PRIORITY] + month_cols + [
+                COL_TOTAL_ORDERS,
+                COL_CONSECUTIVE_ORDERS,
+                COL_WEIGHTED_SCORE,
+                COL_AVG_DEMAND,
+            ]
+            styled = build_styler(monthly_df, numeric_cols, [], status_col=None)
+            styled = apply_styler_widths(styled, list(monthly_df.columns))
+            st.dataframe(styled, use_container_width=True, height=650)
+
+    with tabs[4]:
         st.subheader(TAB_ISSUES)
         issues = data["order_status_by_item"].copy()
         if COL_NOTE not in issues.columns:
