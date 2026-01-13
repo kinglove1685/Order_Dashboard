@@ -16,6 +16,7 @@ from openpyxl.utils import get_column_letter
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_FILE = BASE_DIR / "order_status_with_leadtime.xlsx"
 ISSUE_TRACKER_PATH = BASE_DIR / "issue_tracker.xlsx"
+PRICE_TERM_PATH = BASE_DIR / "거래처별 가격조건 리스트.csv"
 
 TAB_ORDER_STATUS = "\uc218\uc8fc \uc9c4\ud589 \uc0c1\uc138"
 TAB_BY_ITEM = "\uc81c\ud488\ubcc4 \uc218\uc8fc \uc9c4\ud589"
@@ -164,6 +165,7 @@ COL_PACK_EXPECT = "\ud3ec\uc7a5\uc644\ub8cc\uc608\uc0c1\uc77c"
 COL_PACK_DONE = "\ud3ec\uc7a5\uc644\ub8cc\uc77c"
 COL_PACK_PROGRESS = "\ud3ec\uc7a5 \uc9c4\ub3c4\uc728"
 COL_NOTE = "\uc0dd\uc0b0/\ud3ec\uc7a5 \ud2b9\uc774\uc0ac\ud56d"
+COL_PRICE_TERM = "\uac00\uaca9\uc870\uac74"
 COL_RESOLVED = "\ud574\uacb0\uc5ec\ubd80"
 COL_CLOSED_DATE = "\uc885\uacb0\uc77c"
 COL_ISSUE_DATE = "\uc548\uac74\uc0c1\uc815\uc77c"
@@ -866,6 +868,45 @@ def add_search_column(df: pd.DataFrame) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
+def load_price_terms(path: str, mtime: float) -> Dict[str, str]:
+    price_path = Path(path)
+    if not price_path.exists():
+        return {}
+    encodings = ["utf-8-sig", "utf-8", "cp949", "euc-kr"]
+    data = None
+    for encoding in encodings:
+        try:
+            data = pd.read_csv(price_path, encoding=encoding)
+            break
+        except Exception:
+            continue
+    if data is None:
+        return {}
+    if "거래처명" not in data.columns or COL_PRICE_TERM not in data.columns:
+        return {}
+    mapping = data[["거래처명", COL_PRICE_TERM]].copy()
+    mapping["거래처명"] = mapping["거래처명"].astype(str).str.strip()
+    mapping[COL_PRICE_TERM] = mapping[COL_PRICE_TERM].fillna("").astype(str).str.strip()
+    mapping = mapping[mapping["거래처명"] != ""]
+    mapping = mapping.drop_duplicates(subset=["거래처명"], keep="last")
+    return dict(zip(mapping["거래처명"], mapping[COL_PRICE_TERM]))
+
+
+def add_price_term(df: pd.DataFrame, price_terms: Dict[str, str]) -> pd.DataFrame:
+    df = df.copy()
+    if COL_CUSTOMER not in df.columns:
+        df[COL_PRICE_TERM] = ""
+        return df
+    if price_terms:
+        keys = df[COL_CUSTOMER].fillna("").astype(str).str.strip()
+        df[COL_PRICE_TERM] = keys.map(price_terms).fillna("")
+    else:
+        df[COL_PRICE_TERM] = ""
+    cols = [col for col in df.columns if col != COL_PRICE_TERM] + [COL_PRICE_TERM]
+    return df[cols]
+
+
+@st.cache_data(show_spinner=False)
 def load_from_path(path: str, mtime: float) -> Dict[str, pd.DataFrame]:
     xl = pd.ExcelFile(path)
     data = {
@@ -1376,6 +1417,11 @@ def main() -> None:
         )
 
     st.caption(source_label)
+    price_terms = {}
+    if PRICE_TERM_PATH.exists():
+        price_terms = load_price_terms(
+            str(PRICE_TERM_PATH), PRICE_TERM_PATH.stat().st_mtime
+        )
 
     tabs = st.tabs(
         [TAB_ORDER_STATUS, TAB_BY_ITEM, TAB_PRODUCT_SUMMARY, TAB_PRODUCT_MONTHLY, TAB_ISSUES]
@@ -1400,6 +1446,7 @@ def main() -> None:
 
         detail_df = apply_search(detail_df, query)
         detail_df = move_note_before_year(detail_df)
+        detail_df = add_price_term(detail_df, price_terms)
 
         numeric_cols = ORDER_STATUS_NUMERIC + [COL_YEAR]
         detail_df = detail_df.drop(columns=[SEARCH_COL], errors="ignore")
@@ -1455,6 +1502,7 @@ def main() -> None:
 
         detail_df = apply_search(detail_df, query)
         detail_df = move_note_before_year(detail_df)
+        detail_df = add_price_term(detail_df, price_terms)
 
         numeric_cols = ORDER_STATUS_NUMERIC + [COL_YEAR]
         detail_df = detail_df.drop(columns=[SEARCH_COL], errors="ignore")
