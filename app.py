@@ -148,6 +148,7 @@ COL_OWNER = "\ub2f4\ub2f9\uc790"
 COL_CUSTOMER = "\uace0\uac1d"
 COL_WORKNO = "\uc791\uc9c0\ubc88\ud638"
 COL_PRODUCT = "\ud488\uba85"
+COL_PACK_UNIT = "\ud3ec\uc7a5\ub2e8\uc704"
 COL_YEAR = "\uc5f0\ub3c4"
 COL_MONTH_DATE = "__month_date__"
 COL_PROD_EXPECT = "\uc0dd\uc0b0\uc644\ub8cc\uc608\uc0c1\uc77c"
@@ -277,6 +278,7 @@ def prepare_display(
     for col in date_cols:
         if col in display.columns:
             display[col] = pd.to_datetime(display[col], errors="coerce").dt.date
+    display = format_pack_unit_column(display)
     return display
 
 
@@ -906,6 +908,30 @@ def add_price_term(df: pd.DataFrame, price_terms: Dict[str, str]) -> pd.DataFram
     return df[cols]
 
 
+def format_pack_unit_value(value: object) -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return ""
+    if isinstance(value, (int, float)):
+        return f"{int(round(value)):,}"
+    text = str(value).strip()
+    if not text:
+        return ""
+    num_text = text.replace(",", "")
+    try:
+        num = float(num_text)
+    except ValueError:
+        return text
+    return f"{int(round(num)):,}"
+
+
+def format_pack_unit_column(df: pd.DataFrame) -> pd.DataFrame:
+    if COL_PACK_UNIT not in df.columns:
+        return df
+    df = df.copy()
+    df[COL_PACK_UNIT] = df[COL_PACK_UNIT].apply(format_pack_unit_value)
+    return df
+
+
 @st.cache_data(show_spinner=False)
 def load_from_path(path: str, mtime: float) -> Dict[str, pd.DataFrame]:
     xl = pd.ExcelFile(path)
@@ -1447,6 +1473,7 @@ def main() -> None:
         detail_df = apply_search(detail_df, query)
         detail_df = move_note_before_year(detail_df)
         detail_df = add_price_term(detail_df, price_terms)
+        detail_df = format_pack_unit_column(detail_df)
 
         numeric_cols = ORDER_STATUS_NUMERIC + [COL_YEAR]
         detail_df = detail_df.drop(columns=[SEARCH_COL], errors="ignore")
