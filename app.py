@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import io
 import re
@@ -16,7 +16,7 @@ from openpyxl.utils import get_column_letter
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_FILE = BASE_DIR / "order_status_with_leadtime.xlsx"
 ISSUE_TRACKER_PATH = BASE_DIR / "issue_tracker.xlsx"
-PRICE_TERM_PATH = BASE_DIR / "거래처별 가격조건 리스트.csv"
+PRICE_TERM_PATH = BASE_DIR / "嫄곕옒泥섎퀎 媛寃⑹“嫄?由ъ뒪??csv"
 
 TAB_ORDER_STATUS = "\uc218\uc8fc \uc9c4\ud589 \uc0c1\uc138"
 TAB_BY_ITEM = "\uc81c\ud488\ubcc4 \uc218\uc8fc \uc9c4\ud589"
@@ -884,14 +884,14 @@ def load_price_terms(path: str, mtime: float) -> Dict[str, str]:
             continue
     if data is None:
         return {}
-    if "거래처명" not in data.columns or COL_PRICE_TERM not in data.columns:
+    if "嫄곕옒泥섎챸" not in data.columns or COL_PRICE_TERM not in data.columns:
         return {}
-    mapping = data[["거래처명", COL_PRICE_TERM]].copy()
-    mapping["거래처명"] = mapping["거래처명"].astype(str).str.strip()
+    mapping = data[["嫄곕옒泥섎챸", COL_PRICE_TERM]].copy()
+    mapping["嫄곕옒泥섎챸"] = mapping["嫄곕옒泥섎챸"].astype(str).str.strip()
     mapping[COL_PRICE_TERM] = mapping[COL_PRICE_TERM].fillna("").astype(str).str.strip()
-    mapping = mapping[mapping["거래처명"] != ""]
-    mapping = mapping.drop_duplicates(subset=["거래처명"], keep="last")
-    return dict(zip(mapping["거래처명"], mapping[COL_PRICE_TERM]))
+    mapping = mapping[mapping["嫄곕옒泥섎챸"] != ""]
+    mapping = mapping.drop_duplicates(subset=["嫄곕옒泥섎챸"], keep="last")
+    return dict(zip(mapping["嫄곕옒泥섎챸"], mapping[COL_PRICE_TERM]))
 
 
 def add_price_term(df: pd.DataFrame, price_terms: Dict[str, str]) -> pd.DataFrame:
@@ -1441,8 +1441,6 @@ def main() -> None:
             f"\uae30\ubcf8 \ud30c\uc77c: {DEFAULT_FILE.name} "
             f"(\uc218\uc815: {datetime.fromtimestamp(mtime)})"
         )
-
-    st.caption(source_label)
     price_terms = {}
     if PRICE_TERM_PATH.exists():
         price_terms = load_price_terms(
@@ -1644,6 +1642,12 @@ def main() -> None:
     with tabs[4]:
         st.subheader(TAB_ISSUES)
         issues = data["order_status_by_item"].copy()
+        month_range = render_period_controls(issues, "issues")
+        if month_range and COL_MONTH_DATE in issues.columns:
+            start, end = month_range
+            issues = issues[
+                (issues[COL_MONTH_DATE] >= start) & (issues[COL_MONTH_DATE] <= end)
+            ]
         if COL_NOTE not in issues.columns:
             st.info("\ud2b9\uc774\uc0ac\ud56d \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
             return
@@ -1757,3 +1761,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
