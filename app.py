@@ -23,6 +23,7 @@ TAB_BY_ITEM = "\uc81c\ud488\ubcc4 \uc218\uc8fc \uc9c4\ud589"
 TAB_ISSUES = "\uc0dd\uc0b0 \uc774\uc288 \uad00\ub9ac"
 TAB_PRODUCT_SUMMARY = "\uc81c\ud488 \uc218\uc694 \uc694\uc57d"
 TAB_PRODUCT_MONTHLY = "\uc81c\ud488 \uc6d4\ubcc4 \uc218\uc8fc"
+TAB_CUSTOMER_AMOUNT = "\uac70\ub798\ucc98\ubcc4 \uae08\uc561"
 SEARCH_COL = "__search_key__"
 MAX_STATUS_STYLE_ROWS = 2000
 ISSUE_ROW_HEIGHT = 90
@@ -599,9 +600,6 @@ def compute_product_monthly_summary(
     month_list: list[date] = []
     if month_range:
         start, end = month_range
-        if start.year != end.year:
-            start = date(start.year, 1, 1)
-            end = date(end.year, 12, 1)
         month_list = month_sequence(start, end)
 
     if df.empty or COL_PRODUCT not in df.columns or COL_ORDER_QTY not in df.columns:
@@ -688,6 +686,81 @@ def compute_product_monthly_summary(
         ]
     ]
     return result.reset_index(drop=True)
+
+
+def select_amount_column(df: pd.DataFrame) -> str | None:
+    candidates = [COL_ORDER_AMT_USD, COL_ORDER_AMT_KRW, COL_ORDER_AMT]
+    for col in candidates:
+        if col in df.columns and df[col].notna().any():
+            return col
+    for col in candidates:
+        if col in df.columns:
+            return col
+    return None
+
+
+def compute_customer_monthly_amount(
+    df: pd.DataFrame,
+    month_range: tuple[date, date] | None,
+    amount_col: str | None,
+    currency_label: str,
+) -> tuple[pd.DataFrame, list[str]]:
+    month_list: list[date] = []
+    if month_range:
+        start, end = month_range
+        if start.year != end.year:
+            start = date(start.year, 1, 1)
+            end = date(end.year, 12, 1)
+        month_list = month_sequence(start, end)
+
+    if (
+        df.empty
+        or COL_CUSTOMER not in df.columns
+        or amount_col is None
+    ):
+        if not month_list:
+            return pd.DataFrame(), []
+        month_labels = [m.strftime("%Y-%m") for m in month_list]
+        return pd.DataFrame(columns=[COL_CUSTOMER] + month_labels), month_labels
+
+    df = add_month_date_column(df.copy())
+    df = df[df[COL_CUSTOMER].notna()]
+    df = df[df[COL_CUSTOMER].astype(str).str.strip().ne("")]
+    df = df[df[COL_MONTH_DATE].notna()]
+    if df.empty:
+        return pd.DataFrame(), []
+
+    if not month_list:
+        min_month = df[COL_MONTH_DATE].min()
+        max_month = df[COL_MONTH_DATE].max()
+        if pd.isna(min_month) or pd.isna(max_month):
+            return pd.DataFrame(), []
+        month_list = month_sequence(min_month, max_month)
+    if not month_list:
+        return pd.DataFrame(), []
+
+    month_labels = [m.strftime("%Y-%m") for m in month_list]
+    df[COL_MONTH_DATE] = df[COL_MONTH_DATE].apply(
+        lambda d: date(d.year, d.month, 1)
+    )
+    pivot = (
+        df.pivot_table(
+            index=COL_CUSTOMER,
+            columns=COL_MONTH_DATE,
+            values=amount_col,
+            aggfunc="sum",
+            fill_value=0,
+        )
+        .reindex(columns=month_list, fill_value=0)
+        .copy()
+    )
+    pivot["__total__"] = pivot.sum(axis=1)
+    pivot = pivot.sort_values("__total__", ascending=False).drop(columns="__total__")
+    result = pivot.reset_index()
+    rename_map = {m: label for m, label in zip(month_list, month_labels)}
+    result = result.rename(columns=rename_map)
+    result = result[[COL_CUSTOMER] + month_labels]
+    return result.reset_index(drop=True), month_labels
 
 
 def move_note_before_year(df: pd.DataFrame) -> pd.DataFrame:
@@ -1448,7 +1521,14 @@ def main() -> None:
         )
 
     tabs = st.tabs(
-        [TAB_ORDER_STATUS, TAB_BY_ITEM, TAB_PRODUCT_SUMMARY, TAB_PRODUCT_MONTHLY, TAB_ISSUES]
+        [
+            TAB_ORDER_STATUS,
+            TAB_BY_ITEM,
+            TAB_PRODUCT_SUMMARY,
+            TAB_PRODUCT_MONTHLY,
+            TAB_CUSTOMER_AMOUNT,
+            TAB_ISSUES,
+        ]
     )
     shared_filters: dict | None = None
 
@@ -1640,6 +1720,89 @@ def main() -> None:
             st.dataframe(styled, use_container_width=True, height=650)
 
     with tabs[4]:
+        st.subheader(TAB_CUSTOMER_AMOUNT)
+        df = data["order_status"].copy()
+        month_range = render_period_controls(df, "customer_amount")
+
+        detail_df, _, _ = apply_order_filters(
+            df,
+            month_range,
+            filters=shared_filters or {},
+            show_sidebar=False,
+            apply_month_filter=False,
+        )
+        query = st.text_input(
+            "\ud1b5\ud569 \uac80\uc0c9 (\uac70\ub798\ucc98 \uba85\uce6d \ubc94\uc704\ub85c \uac80\uc0c9)",
+            "",
+            key="customer_amount_search",
+        )
+        detail_df = apply_search(detail_df, query)
+
+        amount_options = []
+        if COL_ORDER_AMT_USD in detail_df.columns:
+            amount_options.append(
+                (f"{COL_ORDER_AMT_USD} USD", COL_ORDER_AMT_USD, "USD")
+            )
+        if COL_ORDER_AMT_KRW in detail_df.columns:
+            amount_options.append(
+                (f"{COL_ORDER_AMT_KRW} KRW", COL_ORDER_AMT_KRW, "KRW")
+            )
+        if not amount_options:
+            st.info("\uae08\uc561 \uceec\ub7fc\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.")
+            return
+
+        label_map = {label: (col, currency) for label, col, currency in amount_options}
+        labels = [label for label, _, _ in amount_options]
+        usd_idx = next(
+            (idx for idx, (_, col, _) in enumerate(amount_options) if col == COL_ORDER_AMT_USD),
+            0,
+        )
+        selected_label = st.selectbox(
+            "\uae08\uc561 \uae30\uc900",
+            labels,
+            index=usd_idx,
+            key="customer_amount_basis",
+        )
+        amount_col, currency_label = label_map.get(selected_label, (None, ""))
+
+        amount_df, month_cols = compute_customer_monthly_amount(
+            detail_df, month_range, amount_col, currency_label
+        )
+        if month_range and not amount_df.empty:
+            start, end = month_range
+            selected_months = [
+                m.strftime("%Y-%m") for m in month_sequence(start, end)
+            ]
+            month_cols = [col for col in selected_months if col in amount_df.columns]
+            keep_cols = [COL_CUSTOMER] + month_cols
+            amount_df = amount_df[[col for col in keep_cols if col in amount_df.columns]]
+        if amount_df.empty:
+            st.info("\ud574\ub2f9 \uae30\uac04\uc5d0 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
+        else:
+            display_df = amount_df.copy()
+            suffix = f" {currency_label}" if currency_label else ""
+            for col in month_cols:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].apply(
+                        lambda v: f"{format_number(v)}{suffix}" if format_number(v) else ""
+                    )
+            styled = display_df.style
+            if month_cols:
+                styled = styled.set_properties(
+                    subset=month_cols, **{"text-align": "right"}
+                )
+            if COL_CUSTOMER in display_df.columns:
+                styled = styled.set_properties(
+                    subset=[COL_CUSTOMER], **{"text-align": "left"}
+                )
+            styled = styled.set_table_styles(
+                [{"selector": "th", "props": [("text-align", "center")]}]
+            )
+            styled = apply_styler_widths(styled, list(display_df.columns))
+            amount_df = display_df
+            st.dataframe(styled, use_container_width=True, height=650)
+
+    with tabs[5]:
         st.subheader(TAB_ISSUES)
         issues = data["order_status_by_item"].copy()
         month_range = render_period_controls(issues, "issues")
