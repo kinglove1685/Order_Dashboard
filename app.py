@@ -162,7 +162,7 @@ COL_LEADTIME = "\ub9ac\ub4dc\ud0c0\uc784(\uc77c)"
 
 COL_ORDER_SENT = "\uc218\uc8fc \uc804\uc1a1\uc77c"
 COL_SALES_REQ = "\uc601\uc5c5\ucd9c\uace0\uc694\uccad\uc77c"
-COL_FIRST_SHIP_PLAN = "\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c"
+COL_FIRST_SHIP_PLAN = "\uc601\uc5c5\ud611\uc758\ucd9c\uace0\uc77c"
 COL_PACK_EXPECT = "\ud3ec\uc7a5\uc644\ub8cc\uc608\uc0c1\uc77c"
 COL_PACK_DONE = "\ud3ec\uc7a5\uc644\ub8cc\uc77c"
 COL_PACK_PROGRESS = "\ud3ec\uc7a5 \uc9c4\ub3c4\uc728"
@@ -233,6 +233,13 @@ def to_datetime(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     for col in columns:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
+    return df
+
+
+def normalize_first_ship_plan_column(df: pd.DataFrame) -> pd.DataFrame:
+    legacy = "\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c"
+    if legacy in df.columns and COL_FIRST_SHIP_PLAN not in df.columns:
+        return df.rename(columns={legacy: COL_FIRST_SHIP_PLAN})
     return df
 
 
@@ -1014,6 +1021,7 @@ def load_from_path(path: str, mtime: float) -> Dict[str, pd.DataFrame]:
         "monthly_summary": pd.read_excel(xl, sheet_name="monthly_summary"),
         "summary_by_month": pd.read_excel(xl, sheet_name="summary_by_month"),
     }
+    data["order_status"] = normalize_first_ship_plan_column(data["order_status"])
     data["order_status"] = to_datetime(
         to_numeric(data["order_status"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
@@ -1021,6 +1029,9 @@ def load_from_path(path: str, mtime: float) -> Dict[str, pd.DataFrame]:
     data["order_status"] = add_year_column(data["order_status"])
     data["order_status"] = add_month_date_column(data["order_status"])
     data["order_status"] = add_search_column(data["order_status"])
+    data["order_status_by_item"] = normalize_first_ship_plan_column(
+        data["order_status_by_item"]
+    )
     data["order_status_by_item"] = to_datetime(
         to_numeric(data["order_status_by_item"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
@@ -1042,6 +1053,7 @@ def load_from_bytes(content: bytes, key: str) -> Dict[str, pd.DataFrame]:
         "monthly_summary": pd.read_excel(xl, sheet_name="monthly_summary"),
         "summary_by_month": pd.read_excel(xl, sheet_name="summary_by_month"),
     }
+    data["order_status"] = normalize_first_ship_plan_column(data["order_status"])
     data["order_status"] = to_datetime(
         to_numeric(data["order_status"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
@@ -1049,6 +1061,9 @@ def load_from_bytes(content: bytes, key: str) -> Dict[str, pd.DataFrame]:
     data["order_status"] = add_year_column(data["order_status"])
     data["order_status"] = add_month_date_column(data["order_status"])
     data["order_status"] = add_search_column(data["order_status"])
+    data["order_status_by_item"] = normalize_first_ship_plan_column(
+        data["order_status_by_item"]
+    )
     data["order_status_by_item"] = to_datetime(
         to_numeric(data["order_status_by_item"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
