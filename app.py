@@ -182,9 +182,9 @@ COL_TOTAL_ORDERS = "\ucd1d \uc218\uc8fc"
 COL_CONSECUTIVE_ORDERS = "\uc5f0\uc18d\uc218\uc8fc"
 COL_WEIGHTED_SCORE = "\uac00\uc911\uc810\uc218"
 COL_MONTH_NUM = "\uc6d4 \uc22b\uc790"
-COL_DUE_PLAN = "\ub0a9\uae30\uc900\uc218(\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c)"
+COL_DUE_PLAN = "\ub0a9\uae30\uc900\uc218(\uc601\uc5c5\ud611\uc758\ucd9c\uace0\uc77c)"
 COL_DUE_SALES = "\ub0a9\uae30\uc900\uc218(\uc601\uc5c5\ucd9c\uace0\uc694\uccad\uc77c)"
-COL_DUE_PLAN_RATE = "\ub0a9\uae30\uc900\uc218\uc728(\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c)"
+COL_DUE_PLAN_RATE = "\ub0a9\uae30\uc900\uc218\uc728(\uc601\uc5c5\ud611\uc758\ucd9c\uace0\uc77c)"
 COL_ISSUE_KEY = "__issue_key__"
 
 ORDER_STATUS_NUMERIC = [
@@ -241,6 +241,17 @@ def normalize_first_ship_plan_column(df: pd.DataFrame) -> pd.DataFrame:
     if legacy in df.columns and COL_FIRST_SHIP_PLAN not in df.columns:
         return df.rename(columns={legacy: COL_FIRST_SHIP_PLAN})
     return df
+
+
+def normalize_due_plan_columns(df: pd.DataFrame) -> pd.DataFrame:
+    legacy_due = "\ub0a9\uae30\uc900\uc218(\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c)"
+    legacy_rate = "\ub0a9\uae30\uc900\uc218\uc728(\ucd5c\ucd08\ucd9c\uace0\uacc4\ud68d\uc77c)"
+    rename_map = {}
+    if legacy_due in df.columns and COL_DUE_PLAN not in df.columns:
+        rename_map[legacy_due] = COL_DUE_PLAN
+    if legacy_rate in df.columns and COL_DUE_PLAN_RATE not in df.columns:
+        rename_map[legacy_rate] = COL_DUE_PLAN_RATE
+    return df.rename(columns=rename_map) if rename_map else df
 
 
 def coerce_mixed_date(value: object) -> object:
@@ -1022,6 +1033,7 @@ def load_from_path(path: str, mtime: float) -> Dict[str, pd.DataFrame]:
         "summary_by_month": pd.read_excel(xl, sheet_name="summary_by_month"),
     }
     data["order_status"] = normalize_first_ship_plan_column(data["order_status"])
+    data["order_status"] = normalize_due_plan_columns(data["order_status"])
     data["order_status"] = to_datetime(
         to_numeric(data["order_status"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
@@ -1032,6 +1044,9 @@ def load_from_path(path: str, mtime: float) -> Dict[str, pd.DataFrame]:
     data["order_status_by_item"] = normalize_first_ship_plan_column(
         data["order_status_by_item"]
     )
+    data["order_status_by_item"] = normalize_due_plan_columns(
+        data["order_status_by_item"]
+    )
     data["order_status_by_item"] = to_datetime(
         to_numeric(data["order_status_by_item"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
@@ -1039,7 +1054,9 @@ def load_from_path(path: str, mtime: float) -> Dict[str, pd.DataFrame]:
     data["order_status_by_item"] = add_year_column(data["order_status_by_item"])
     data["order_status_by_item"] = add_month_date_column(data["order_status_by_item"])
     data["order_status_by_item"] = add_search_column(data["order_status_by_item"])
+    data["monthly_summary"] = normalize_due_plan_columns(data["monthly_summary"])
     data["monthly_summary"] = to_numeric(data["monthly_summary"], MONTHLY_NUMERIC)
+    data["summary_by_month"] = normalize_due_plan_columns(data["summary_by_month"])
     data["summary_by_month"] = to_numeric(data["summary_by_month"], LEADTIME_NUMERIC)
     return data
 
@@ -1054,6 +1071,7 @@ def load_from_bytes(content: bytes, key: str) -> Dict[str, pd.DataFrame]:
         "summary_by_month": pd.read_excel(xl, sheet_name="summary_by_month"),
     }
     data["order_status"] = normalize_first_ship_plan_column(data["order_status"])
+    data["order_status"] = normalize_due_plan_columns(data["order_status"])
     data["order_status"] = to_datetime(
         to_numeric(data["order_status"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
@@ -1064,6 +1082,9 @@ def load_from_bytes(content: bytes, key: str) -> Dict[str, pd.DataFrame]:
     data["order_status_by_item"] = normalize_first_ship_plan_column(
         data["order_status_by_item"]
     )
+    data["order_status_by_item"] = normalize_due_plan_columns(
+        data["order_status_by_item"]
+    )
     data["order_status_by_item"] = to_datetime(
         to_numeric(data["order_status_by_item"], ORDER_STATUS_NUMERIC), ORDER_STATUS_DATE
     )
@@ -1071,7 +1092,9 @@ def load_from_bytes(content: bytes, key: str) -> Dict[str, pd.DataFrame]:
     data["order_status_by_item"] = add_year_column(data["order_status_by_item"])
     data["order_status_by_item"] = add_month_date_column(data["order_status_by_item"])
     data["order_status_by_item"] = add_search_column(data["order_status_by_item"])
+    data["monthly_summary"] = normalize_due_plan_columns(data["monthly_summary"])
     data["monthly_summary"] = to_numeric(data["monthly_summary"], MONTHLY_NUMERIC)
+    data["summary_by_month"] = normalize_due_plan_columns(data["summary_by_month"])
     data["summary_by_month"] = to_numeric(data["summary_by_month"], LEADTIME_NUMERIC)
     return data
 
@@ -1794,6 +1817,7 @@ def main() -> None:
         if amount_df.empty:
             st.info("\ud574\ub2f9 \uae30\uac04\uc5d0 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
         else:
+            export_df = amount_df.copy()
             display_df = amount_df.copy()
             suffix = f" {currency_label}" if currency_label else ""
             for col in month_cols:
@@ -1814,8 +1838,14 @@ def main() -> None:
                 [{"selector": "th", "props": [("text-align", "center")]}]
             )
             styled = apply_styler_widths(styled, list(display_df.columns))
-            amount_df = display_df
             st.dataframe(styled, use_container_width=True, height=650)
+            download_excel_button(
+                export_df,
+                f"customer_amount_{currency_label or 'amount'}.xlsx",
+                month_cols,
+                [],
+                key="customer_amount_download",
+            )
 
     with tabs[5]:
         st.subheader(TAB_ISSUES)
