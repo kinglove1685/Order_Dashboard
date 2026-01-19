@@ -722,6 +722,7 @@ def compute_customer_monthly_amount(
     month_range: tuple[date, date] | None,
     amount_col: str | None,
     currency_label: str,
+    group_cols: list[str] | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
     month_list: list[date] = []
     if month_range:
@@ -731,15 +732,12 @@ def compute_customer_monthly_amount(
             end = date(end.year, 12, 1)
         month_list = month_sequence(start, end)
 
-    if (
-        df.empty
-        or COL_CUSTOMER not in df.columns
-        or amount_col is None
-    ):
+    if df.empty or COL_CUSTOMER not in df.columns or amount_col is None:
         if not month_list:
             return pd.DataFrame(), []
         month_labels = [m.strftime("%Y-%m") for m in month_list]
-        return pd.DataFrame(columns=[COL_CUSTOMER] + month_labels), month_labels
+        base_cols = group_cols or [COL_CUSTOMER]
+        return pd.DataFrame(columns=base_cols + month_labels), month_labels
 
     df = add_month_date_column(df.copy())
     df = df[df[COL_CUSTOMER].notna()]
@@ -761,23 +759,23 @@ def compute_customer_monthly_amount(
     df[COL_MONTH_DATE] = df[COL_MONTH_DATE].apply(
         lambda d: date(d.year, d.month, 1)
     )
-    pivot = (
-        df.pivot_table(
-            index=COL_CUSTOMER,
-            columns=COL_MONTH_DATE,
-            values=amount_col,
-            aggfunc="sum",
-            fill_value=0,
-        )
-        .reindex(columns=month_list, fill_value=0)
-        .copy()
-    )
+    base_cols = group_cols or [COL_CUSTOMER]
+    base_cols = [col for col in base_cols if col in df.columns]
+    if COL_CUSTOMER not in base_cols:
+        base_cols = [COL_CUSTOMER] + base_cols
+    pivot = df.pivot_table(
+        index=base_cols,
+        columns=COL_MONTH_DATE,
+        values=amount_col,
+        aggfunc="sum",
+        fill_value=0,
+    ).reindex(columns=month_list, fill_value=0)
     pivot["__total__"] = pivot.sum(axis=1)
     pivot = pivot.sort_values("__total__", ascending=False).drop(columns="__total__")
     result = pivot.reset_index()
     rename_map = {m: label for m, label in zip(month_list, month_labels)}
     result = result.rename(columns=rename_map)
-    result = result[[COL_CUSTOMER] + month_labels]
+    result = result[base_cols + month_labels]
     return result.reset_index(drop=True), month_labels
 
 
@@ -1795,16 +1793,35 @@ def main() -> None:
             (idx for idx, (_, col, _) in enumerate(amount_options) if col == COL_ORDER_AMT_USD),
             0,
         )
-        selected_label = st.selectbox(
-            "\uae08\uc561 \uae30\uc900",
-            labels,
-            index=usd_idx,
-            key="customer_amount_basis",
-        )
+        basis_col, owner_col, country_col = st.columns([3, 1, 1], gap="small")
+        with basis_col:
+            selected_label = st.selectbox(
+                "\uae08\uc561 \uae30\uc900",
+                labels,
+                index=usd_idx,
+                key="customer_amount_basis",
+            )
+        with owner_col:
+            show_owner = st.checkbox(
+                f"{COL_OWNER} \ud45c\uc2dc",
+                value=False,
+                key="customer_amount_owner",
+            )
+        with country_col:
+            show_country = st.checkbox(
+                f"{COL_COUNTRY} \ud45c\uc2dc",
+                value=False,
+                key="customer_amount_country",
+            )
         amount_col, currency_label = label_map.get(selected_label, (None, ""))
+        group_cols = [COL_CUSTOMER]
+        if show_owner:
+            group_cols.append(COL_OWNER)
+        if show_country:
+            group_cols.append(COL_COUNTRY)
 
         amount_df, month_cols = compute_customer_monthly_amount(
-            detail_df, month_range, amount_col, currency_label
+            detail_df, month_range, amount_col, currency_label, group_cols
         )
         if month_range and not amount_df.empty:
             start, end = month_range
@@ -1812,7 +1829,7 @@ def main() -> None:
                 m.strftime("%Y-%m") for m in month_sequence(start, end)
             ]
             month_cols = [col for col in selected_months if col in amount_df.columns]
-            keep_cols = [COL_CUSTOMER] + month_cols
+            keep_cols = group_cols + month_cols
             amount_df = amount_df[[col for col in keep_cols if col in amount_df.columns]]
         if amount_df.empty:
             st.info("\ud574\ub2f9 \uae30\uac04\uc5d0 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.")
@@ -1830,10 +1847,15 @@ def main() -> None:
                 styled = styled.set_properties(
                     subset=month_cols, **{"text-align": "right"}
                 )
-            if COL_CUSTOMER in display_df.columns:
-                styled = styled.set_properties(
-                    subset=[COL_CUSTOMER], **{"text-align": "left"}
-                )
+            text_cols = [COL_CUSTOMER]
+            if show_owner and COL_OWNER in display_df.columns:
+                text_cols.append(COL_OWNER)
+            if show_country and COL_COUNTRY in display_df.columns:
+                text_cols.append(COL_COUNTRY)
+            styled = styled.set_properties(
+                subset=[col for col in text_cols if col in display_df.columns],
+                **{"text-align": "left"},
+            )
             styled = styled.set_table_styles(
                 [{"selector": "th", "props": [("text-align", "center")]}]
             )
