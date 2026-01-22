@@ -2,9 +2,11 @@
 
 import io
 import re
-from datetime import date, datetime, timedelta
+import subprocess
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -14,7 +16,6 @@ from openpyxl.utils import get_column_letter
 
 
 BASE_DIR = Path(__file__).resolve().parent
-APP_STARTED_AT = datetime.now()
 DEFAULT_FILE = BASE_DIR / "order_status_with_leadtime.xlsx"
 ISSUE_TRACKER_PATH = BASE_DIR / "issue_tracker.xlsx"
 PRICE_TERM_PATH = BASE_DIR / "嫄곕옒泥섎퀎 媛寃⑹“嫄?由ъ뒪??csv"
@@ -1532,6 +1533,22 @@ def inject_theme() -> None:
     st.markdown(THEME_CSS, unsafe_allow_html=True)
 
 
+def get_git_update_time(path: Path) -> datetime | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(BASE_DIR), "log", "-1", "--format=%ct", "--", str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    timestamp = result.stdout.strip()
+    if not timestamp.isdigit():
+        return None
+    return datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
+
+
 def main() -> None:
     st.set_page_config(page_title="\uc218\uc8fc \ub300\uc2dc\ubcf4\ub4dc", layout="wide")
     inject_theme()
@@ -1558,11 +1575,14 @@ def main() -> None:
         mtime = DEFAULT_FILE.stat().st_mtime
         data = load_from_path(str(DEFAULT_FILE), mtime)
 
-    file_update_label = "\ub300\uc2dc\ubcf4\ub4dc \uc2dc\uc791"
-    file_update_dt = APP_STARTED_AT
+    file_update_label = "\ud30c\uc77c \uc5c5\ub370\uc774\ud2b8"
+    file_update_dt = datetime.fromtimestamp(
+        DEFAULT_FILE.stat().st_mtime, tz=ZoneInfo("Asia/Seoul")
+    )
+    file_update_text = f"{file_update_dt:%Y-%m-%d %H:%M} KST"
 
     file_update_slot.markdown(
-        f"<div class=\"file-update\">{file_update_label}: {file_update_dt:%Y-%m-%d %H:%M}</div>",
+        f"<div class=\"file-update\">{file_update_label}: {file_update_text}</div>",
         unsafe_allow_html=True,
     )
     price_terms = {}
