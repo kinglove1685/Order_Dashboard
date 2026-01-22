@@ -14,6 +14,7 @@ from openpyxl.utils import get_column_letter
 
 
 BASE_DIR = Path(__file__).resolve().parent
+APP_STARTED_AT = datetime.now()
 DEFAULT_FILE = BASE_DIR / "order_status_with_leadtime.xlsx"
 ISSUE_TRACKER_PATH = BASE_DIR / "issue_tracker.xlsx"
 PRICE_TERM_PATH = BASE_DIR / "嫄곕옒泥섎퀎 媛寃⑹“嫄?由ъ뒪??csv"
@@ -1550,16 +1551,15 @@ def main() -> None:
 
     if upload:
         data = load_from_bytes(upload.getvalue(), upload.name)
-        file_update_label = "\uc5c5\ub85c\ub4dc \uc2dc\uac01"
-        file_update_dt = datetime.now()
     else:
         if not DEFAULT_FILE.exists():
             st.error(f"\ub370\uc774\ud130 \ud30c\uc77c\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4: {DEFAULT_FILE}")
             st.stop()
         mtime = DEFAULT_FILE.stat().st_mtime
         data = load_from_path(str(DEFAULT_FILE), mtime)
-        file_update_label = "\ud30c\uc77c \uc5c5\ub370\uc774\ud2b8"
-        file_update_dt = datetime.fromtimestamp(mtime)
+
+    file_update_label = "\ub300\uc2dc\ubcf4\ub4dc \uc2dc\uc791"
+    file_update_dt = APP_STARTED_AT
 
     file_update_slot.markdown(
         f"<div class=\"file-update\">{file_update_label}: {file_update_dt:%Y-%m-%d %H:%M}</div>",
