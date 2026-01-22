@@ -65,6 +65,12 @@ h1, h2, h3 {
 h1 { font-size: 2.6rem; margin-bottom: 0.2rem; }
 .stCaption { color: var(--muted); }
 .stCaption { margin-bottom: 0.4rem; }
+.file-update {
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 1.2rem;
+}
 .stTabs [data-baseweb="tab"] {
   background: #fff8ee;
   border: 1px solid var(--border);
@@ -1528,7 +1534,12 @@ def inject_theme() -> None:
 def main() -> None:
     st.set_page_config(page_title="\uc218\uc8fc \ub300\uc2dc\ubcf4\ub4dc", layout="wide")
     inject_theme()
-    st.title("\uc218\uc8fc \ub300\uc2dc\ubcf4\ub4dc")
+
+    header_cols = st.columns([3, 1], vertical_alignment="center")
+    with header_cols[0]:
+        st.title("\uc218\uc8fc \ub300\uc2dc\ubcf4\ub4dc")
+    with header_cols[1]:
+        file_update_slot = st.empty()
 
     with st.sidebar:
         st.subheader("\ub370\uc774\ud130")
@@ -1539,17 +1550,21 @@ def main() -> None:
 
     if upload:
         data = load_from_bytes(upload.getvalue(), upload.name)
-        source_label = f"\uc5c5\ub85c\ub4dc \ud30c\uc77c: {upload.name}"
+        file_update_label = "\uc5c5\ub85c\ub4dc \uc2dc\uac01"
+        file_update_dt = datetime.now()
     else:
         if not DEFAULT_FILE.exists():
             st.error(f"\ub370\uc774\ud130 \ud30c\uc77c\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4: {DEFAULT_FILE}")
             st.stop()
         mtime = DEFAULT_FILE.stat().st_mtime
         data = load_from_path(str(DEFAULT_FILE), mtime)
-        source_label = (
-            f"\uae30\ubcf8 \ud30c\uc77c: {DEFAULT_FILE.name} "
-            f"(\uc218\uc815: {datetime.fromtimestamp(mtime)})"
-        )
+        file_update_label = "\ud30c\uc77c \uc5c5\ub370\uc774\ud2b8"
+        file_update_dt = datetime.fromtimestamp(mtime)
+
+    file_update_slot.markdown(
+        f"<div class=\"file-update\">{file_update_label}: {file_update_dt:%Y-%m-%d %H:%M}</div>",
+        unsafe_allow_html=True,
+    )
     price_terms = {}
     if PRICE_TERM_PATH.exists():
         price_terms = load_price_terms(
