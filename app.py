@@ -2,9 +2,11 @@
 
 import io
 import re
-from datetime import date, datetime, timedelta
+import subprocess
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, Tuple
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -1531,6 +1533,22 @@ def inject_theme() -> None:
     st.markdown(THEME_CSS, unsafe_allow_html=True)
 
 
+def get_git_update_time(path: Path) -> datetime | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(BASE_DIR), "log", "-1", "--format=%ct", "--", str(path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    timestamp = result.stdout.strip()
+    if not timestamp.isdigit():
+        return None
+    return datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
+
+
 def main() -> None:
     st.set_page_config(page_title="\uc218\uc8fc \ub300\uc2dc\ubcf4\ub4dc", layout="wide")
     inject_theme()
@@ -1550,19 +1568,21 @@ def main() -> None:
 
     if upload:
         data = load_from_bytes(upload.getvalue(), upload.name)
-        file_update_label = "\uc5c5\ub85c\ub4dc \uc2dc\uac01"
-        file_update_dt = datetime.now()
     else:
         if not DEFAULT_FILE.exists():
             st.error(f"\ub370\uc774\ud130 \ud30c\uc77c\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4: {DEFAULT_FILE}")
             st.stop()
         mtime = DEFAULT_FILE.stat().st_mtime
         data = load_from_path(str(DEFAULT_FILE), mtime)
-        file_update_label = "\ud30c\uc77c \uc5c5\ub370\uc774\ud2b8"
-        file_update_dt = datetime.fromtimestamp(mtime)
+
+    file_update_label = "\ud30c\uc77c \uc5c5\ub370\uc774\ud2b8"
+    file_update_dt = datetime.fromtimestamp(
+        DEFAULT_FILE.stat().st_mtime, tz=ZoneInfo("Asia/Seoul")
+    )
+    file_update_text = f"{file_update_dt:%Y-%m-%d %H:%M} KST"
 
     file_update_slot.markdown(
-        f"<div class=\"file-update\">{file_update_label}: {file_update_dt:%Y-%m-%d %H:%M}</div>",
+        f"<div class=\"file-update\">{file_update_label}: {file_update_text}</div>",
         unsafe_allow_html=True,
     )
     price_terms = {}
