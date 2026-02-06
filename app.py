@@ -309,6 +309,20 @@ def prepare_display(
     return display
 
 
+def reorder_detail_columns(df: pd.DataFrame) -> pd.DataFrame:
+    preferred = [
+        COL_MONTH,
+        COL_TYPE,
+        COL_WORKNO,
+        COL_CUSTOMER,
+        COL_PRODUCT,
+        COL_OWNER,
+    ]
+    ordered = [col for col in preferred if col in df.columns]
+    remaining = [col for col in df.columns if col not in ordered]
+    return df[ordered + remaining]
+
+
 def build_column_config(
     numeric_cols: list[str],
     date_cols: list[str],
@@ -1623,6 +1637,7 @@ def main() -> None:
         detail_df = move_note_before_year(detail_df)
         detail_df = add_price_term(detail_df, price_terms)
         detail_df = format_pack_unit_column(detail_df)
+        detail_df = reorder_detail_columns(detail_df)
 
         numeric_cols = ORDER_STATUS_NUMERIC + [COL_YEAR]
         detail_df = detail_df.drop(columns=[SEARCH_COL], errors="ignore")
@@ -1679,6 +1694,7 @@ def main() -> None:
         detail_df = apply_search(detail_df, query)
         detail_df = move_note_before_year(detail_df)
         detail_df = add_price_term(detail_df, price_terms)
+        detail_df = reorder_detail_columns(detail_df)
 
         numeric_cols = ORDER_STATUS_NUMERIC + [COL_YEAR]
         detail_df = detail_df.drop(columns=[SEARCH_COL], errors="ignore")
