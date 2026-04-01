@@ -974,7 +974,27 @@ def calc_table_height(
 def add_search_column(df: pd.DataFrame) -> pd.DataFrame:
     if SEARCH_COL in df.columns:
         return df
-    text = df.fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+
+    def stringify_search_value(value: object) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple, set)):
+            return " ".join(stringify_search_value(item) for item in value)
+        if isinstance(value, dict):
+            return " ".join(
+                f"{stringify_search_value(key)} {stringify_search_value(item)}"
+                for key, item in value.items()
+            )
+        if pd.isna(value):
+            return ""
+        return str(value)
+
+    text = df.apply(
+        lambda row: " ".join(stringify_search_value(value) for value in row.to_list())
+        .strip()
+        .lower(),
+        axis=1,
+    )
     df = df.copy()
     df[SEARCH_COL] = text
     return df
