@@ -491,7 +491,10 @@ def build_styler(
         styled = styled.format(formatters, na_rep="")
 
     if status_col and status_col in df.columns:
-        styled = styled.applymap(style_status, subset=[status_col])
+        if hasattr(styled, "map"):
+            styled = styled.map(style_status, subset=[status_col])
+        else:
+            styled = styled.applymap(style_status, subset=[status_col])
 
     return styled
 
