@@ -908,13 +908,19 @@ def render_period_controls(df: pd.DataFrame, key_prefix: str) -> Tuple[date, dat
     min_date = month_min
     max_date = last_day_of_month(month_max)
     current_month = date.today().replace(day=1)
-    default_start = date(current_month.year, 1, 1)
-    default_end = last_day_of_month(add_months(current_month, 2))
+    default_start = current_month
+    default_end = add_months(current_month, 3)
     default_start, default_end = clamp_range(default_start, default_end, min_date, max_date)
 
     period_key = f"{key_prefix}_period_range"
-    if period_key not in st.session_state:
+    period_version_key = f"{key_prefix}_period_default_version"
+    period_default_version = "2026-04-07"
+    if (
+        period_key not in st.session_state
+        or st.session_state.get(period_version_key) != period_default_version
+    ):
         st.session_state[period_key] = (default_start, default_end)
+        st.session_state[period_version_key] = period_default_version
 
     today = date.today()
     presets = {
