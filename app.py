@@ -913,8 +913,14 @@ def render_period_controls(df: pd.DataFrame, key_prefix: str) -> Tuple[date, dat
     default_start, default_end = clamp_range(default_start, default_end, min_date, max_date)
 
     period_key = f"{key_prefix}_period_range"
-    if period_key not in st.session_state:
+    period_version_key = f"{key_prefix}_period_default_version"
+    period_default_version = "2026-04-07"
+    if (
+        period_key not in st.session_state
+        or st.session_state.get(period_version_key) != period_default_version
+    ):
         st.session_state[period_key] = (default_start, default_end)
+        st.session_state[period_version_key] = period_default_version
 
     today = date.today()
     presets = {
