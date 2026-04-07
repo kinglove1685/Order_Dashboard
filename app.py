@@ -491,7 +491,10 @@ def build_styler(
         styled = styled.format(formatters, na_rep="")
 
     if status_col and status_col in df.columns:
-        styled = styled.applymap(style_status, subset=[status_col])
+        if hasattr(styled, "map"):
+            styled = styled.map(style_status, subset=[status_col])
+        else:
+            styled = styled.applymap(style_status, subset=[status_col])
 
     return styled
 
@@ -905,8 +908,8 @@ def render_period_controls(df: pd.DataFrame, key_prefix: str) -> Tuple[date, dat
     min_date = month_min
     max_date = last_day_of_month(month_max)
     current_month = date.today().replace(day=1)
-    default_start = date(current_month.year, 1, 1)
-    default_end = last_day_of_month(add_months(current_month, 2))
+    default_start = current_month
+    default_end = add_months(current_month, 3)
     default_start, default_end = clamp_range(default_start, default_end, min_date, max_date)
 
     period_key = f"{key_prefix}_period_range"
@@ -974,7 +977,27 @@ def calc_table_height(
 def add_search_column(df: pd.DataFrame) -> pd.DataFrame:
     if SEARCH_COL in df.columns:
         return df
-    text = df.fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+
+    def stringify_search_value(value: object) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple, set)):
+            return " ".join(stringify_search_value(item) for item in value)
+        if isinstance(value, dict):
+            return " ".join(
+                f"{stringify_search_value(key)} {stringify_search_value(item)}"
+                for key, item in value.items()
+            )
+        if pd.isna(value):
+            return ""
+        return str(value)
+
+    text = df.apply(
+        lambda row: " ".join(stringify_search_value(value) for value in row.to_list())
+        .strip()
+        .lower(),
+        axis=1,
+    )
     df = df.copy()
     df[SEARCH_COL] = text
     return df
